@@ -102,7 +102,7 @@ header.bar h1.sub { font-size: 22px; }
 .phrase .fr { color: var(--fr); font-weight: 600; }
 .phrase .k { color: var(--ink-2); font-size: 14px; }
 .phrase .side { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.tag { font-size: 10px; font-weight: 600; letter-spacing: .06em; color: var(--ink-3); margin-right: 6px; display: inline-block; width: 18px; }
+.tag { font-size: 15px; margin-right: 8px; display: inline-block; width: 20px; text-align: center; }
 .check { color: var(--good); font-size: 14px; }
 .speak { border: 1px solid var(--line); background: var(--surface-2); border-radius: 99px; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink-2); }
 .speak svg { width: 18px; height: 18px; }
@@ -315,11 +315,11 @@ function home() {
 function phraseRow(p) {
   return h('div', { class: 'phrase' },
     h('div', { class: 'lines' },
-      h('div', { class: 'da' }, h('span', { class: 'tag' }, 'DA'), p.da),
-      h('div', { class: 'fr' }, h('span', { class: 'tag' }, 'FR'), p.fr),
-      h('div', { class: 'k' }, h('span', { class: 'tag' }, 'EN'), p.en),
-      h('div', { class: 'k' }, h('span', { class: 'tag' }, 'ZH'), p.zh),
-      h('div', { class: 'k' }, h('span', { class: 'tag' }, 'MY'), h('span', { class: 'my' }, p.my))),
+      h('div', { class: 'da' }, h('span', { class: 'tag', title: LANGS.da.name, 'aria-label': LANGS.da.name }, LANGS.da.flag), p.da),
+      h('div', { class: 'fr' }, h('span', { class: 'tag', title: LANGS.fr.name, 'aria-label': LANGS.fr.name }, LANGS.fr.flag), p.fr),
+      h('div', { class: 'k' }, h('span', { class: 'tag', title: LANGS.en.name, 'aria-label': LANGS.en.name }, LANGS.en.flag), p.en),
+      h('div', { class: 'k' }, h('span', { class: 'tag', title: LANGS.zh.name, 'aria-label': LANGS.zh.name }, LANGS.zh.flag), p.zh),
+      h('div', { class: 'k' }, h('span', { class: 'tag', title: LANGS.my.name, 'aria-label': LANGS.my.name }, LANGS.my.flag), h('span', { class: 'my' }, p.my))),
     h('div', { class: 'side' },
       canSpeak && h('button', { class: 'speak', 'aria-label': 'Play Danish and French', html: ICON.speaker, onclick: () => speak(p) }),
       learned(p) && h('span', { class: 'check', title: 'Learned' }, '✓')));
