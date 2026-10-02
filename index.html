@@ -137,6 +137,7 @@ header.bar h1.sub { font-size: 22px; }
 .set:first-child { border-top: 0; }
 .set label { font-weight: 500; }
 .set input[type=range] { flex: 1; min-width: 160px; accent-color: var(--fr); }
+.set select.pick { flex: 1; min-width: 0; max-width: 100%; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
 .set input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--fr); }
 .note { font-size: 13px; color: var(--ink-2); padding: 0 4px; }
 .danger { border: 1px solid var(--again); color: var(--again); background: none; border-radius: 10px; padding: 9px 14px; font-weight: 600; }
@@ -180,7 +181,8 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-const settings = Object.assign({ autoPlay: true, rate: 0.85 }, store.get('lingua.settings', {}));
+const settings = Object.assign({ autoPlay: true, rate: 0.85, voice: { da: '', fr: '' } }, store.get('lingua.settings', {}));
+settings.voice = Object.assign({ da: '', fr: '' }, settings.voice);
 const saveSettings = () => store.set('lingua.settings', settings);
 
 // ---------- progress (spaced repetition) ----------
@@ -241,19 +243,20 @@ const canSpeak = 'speechSynthesis' in window;
 let voices = [];
 function loadVoices() { voices = canSpeak ? speechSynthesis.getVoices() : []; }
 if (canSpeak) { loadVoices(); speechSynthesis.onvoiceschanged = () => { loadVoices(); if (view.screen === 'settings') render(); }; }
-function voiceFor(code) {
-  const m = voices.filter(v => v.lang.replace('_', '-').toLowerCase().startsWith(code.slice(0, 2)));
-  const rank = v => (/premium|enhanced|neural|natural/i.test(v.name) ? 2 : 0) + (v.lang.replace('_', '-').toLowerCase() === code.toLowerCase() ? 1 : 0);
-  return m.sort((a, b) => rank(b) - rank(a))[0] || null;
-}
+// Voices the browser offers for a language ('da' or 'fr').
+const voicesFor = k => voices.filter(v => v.lang.replace('_', '-').toLowerCase().startsWith(k))
+  .sort((a, b) => a.name.localeCompare(b.name));
+// Only set a voice when the learner picked one. Otherwise the phone's own default for that language is used.
+const chosenVoice = k => settings.voice[k] ? voicesFor(k).find(v => v.voiceURI === settings.voice[k]) || null : null;
 const clean = t => t.replace(/\s*\([^)]*\)/g, '');
 function speak(p) {
   if (!canSpeak) return;
   speechSynthesis.cancel();
   for (const [k, code] of [['da', 'da-DK'], ['fr', 'fr-FR']]) {
+    if (!p[k]) continue;
     const u = new SpeechSynthesisUtterance(clean(p[k]));
     u.lang = code; u.rate = settings.rate;
-    const v = voiceFor(code); if (v) u.voice = v;
+    const v = chosenVoice(k); if (v) u.voice = v;
     speechSynthesis.speak(u);
   }
 }
@@ -400,9 +403,11 @@ function startAudio() {
 }
 
 function settingsView() {
-  const da = voiceFor('da-DK'), fr = voiceFor('fr-FR');
-  const voiceNote = !canSpeak ? 'This browser cannot play speech.'
-    : `Danish voice: ${da ? da.name : 'none found'} · French voice: ${fr ? fr.name : 'none found'}.`;
+  const picker = (k, label) => h('div', { class: 'set' },
+    h('label', { for: 'voice-' + k }, label),
+    h('select', { id: 'voice-' + k, class: 'pick', onchange: e => { settings.voice[k] = e.target.value; saveSettings(); speak(k === 'da' ? { da: 'Hej, jeg hedder Lingua.', fr: '' } : { da: '', fr: 'Bonjour, je m\'appelle Lingua.' }); } },
+      h('option', { value: '', selected: !settings.voice[k] }, 'Phone default'),
+      voicesFor(k).map(v => h('option', { value: v.voiceURI, selected: settings.voice[k] === v.voiceURI }, v.name + (v.lang.length > 2 ? ' (' + v.lang + ')' : '')))));
   return [
     h('header', { class: 'bar' },
       h('button', { class: 'icon-btn', 'aria-label': 'Back', html: ICON.back, onclick: () => go('home') }),
@@ -417,10 +422,14 @@ function settingsView() {
         h('span', { 'aria-hidden': 'true' }, '🐢'),
         h('input', { type: 'range', id: 'rate', min: '0.5', max: '1.1', step: '0.05', value: String(settings.rate), oninput: e => { settings.rate = +e.target.value; saveSettings(); } }),
         h('span', { 'aria-hidden': 'true' }, '🐇')),
+      canSpeak && picker('da', '🇩🇰 Danish voice'),
+      canSpeak && picker('fr', '🇫🇷 French voice'),
       h('div', { class: 'set' },
         h('span', {}, 'Test the voices'),
         h('button', { class: 'ghost', onclick: () => speak({ da: 'Hej, jeg hedder Lingua.', fr: 'Bonjour, je m\'appelle Lingua.' }) }, 'Play'))),
-    h('p', { class: 'note' }, voiceNote + ' On iPhone, better voices are in the Settings app: Accessibility › Read & Speak › Voices. Download an Enhanced Danish and French voice, then reload this page.'),
+    h('p', { class: 'note' }, canSpeak
+      ? '"Phone default" uses the voice set for each language on your device. On iPhone that is Settings › Accessibility › Read & Speak › Voices. After downloading a new voice, close the browser fully and reopen this page.'
+      : 'This browser cannot play speech.'),
     h('div', { class: 'section-label' }, 'Progress'),
     h('div', { class: 'panel' },
       h('div', { class: 'set' },
