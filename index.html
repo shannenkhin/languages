@@ -105,7 +105,10 @@ header.bar h1.sub { font-size: 22px; }
 .tag { font-size: 15px; margin-right: 8px; display: inline-block; width: 20px; text-align: center; }
 .check { color: var(--good); font-size: 14px; }
 .speak { border: 1px solid var(--line); background: var(--surface-2); border-radius: 99px; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink-2); }
-.speak svg { width: 18px; height: 18px; }
+.speak svg { width: 16px; height: 16px; }
+.speak { width: auto; min-width: 36px; padding: 0 9px; gap: 3px; font-size: 13px; }
+.mini-speak { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2); border-radius: 99px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; margin-left: 6px; padding: 0; }
+.mini-speak svg { width: 14px; height: 14px; }
 
 .progress { height: 5px; background: var(--surface); border-radius: 9px; overflow: hidden; }
 .progress i { display: block; height: 100%; background: var(--ink); transition: width .25s; }
@@ -250,10 +253,13 @@ const voicesFor = k => voices.filter(v => v.lang.replace('_', '-').toLowerCase()
 // Only set a voice when the learner picked one. Otherwise the phone's own default for that language is used.
 const chosenVoice = k => settings.voice[k] ? voicesFor(k).find(v => v.voiceURI === settings.voice[k]) || null : null;
 const clean = t => t.replace(/\s*\([^)]*\)/g, '').trim();
-function speak(p) {
+const VOICE_CODE = { da: 'da-DK', fr: 'fr-FR' };
+// Danish plays automatically; French plays only from its own button.
+function speak(p, langs = ['da']) {
   if (!canSpeak) return;
   speechSynthesis.cancel();
-  for (const [k, code] of [['da', 'da-DK']]) {
+  for (const k of langs) {
+    const code = VOICE_CODE[k];
     if (!p[k]) continue;
     const u = new SpeechSynthesisUtterance(clean(p[k]));
     u.lang = code; u.rate = settings.rate;
@@ -326,7 +332,8 @@ function phraseRow(p) {
       h('div', { class: 'k' }, h('span', { class: 'tag', title: LANGS.zh.name, 'aria-label': LANGS.zh.name }, LANGS.zh.flag), p.zh),
       h('div', { class: 'k' }, h('span', { class: 'tag', title: LANGS.my.name, 'aria-label': LANGS.my.name }, LANGS.my.flag), h('span', { class: 'my' }, p.my))),
     h('div', { class: 'side' },
-      canSpeak && h('button', { class: 'speak', 'aria-label': 'Play Danish', html: ICON.speaker, onclick: () => speak(p) }),
+      canSpeak && h('button', { class: 'speak', 'aria-label': 'Play Danish', title: 'Play Danish', html: LANGS.da.flag + ICON.speaker, onclick: () => speak(p, ['da']) }),
+      canSpeak && h('button', { class: 'speak', 'aria-label': 'Play French', title: 'Play French', html: LANGS.fr.flag + ICON.speaker, onclick: () => speak(p, ['fr']) }),
       learned(p) && h('span', { class: 'check', title: 'Learned' }, '✓')));
 }
 
@@ -350,7 +357,8 @@ function lesson() {
 
 function line(k, p, lead) {
   return h('div', { class: `line ${k}${lead ? ' lead' : ''}` },
-    h('div', { class: 'lab' }, `${LANGS[k].flag} ${LANGS[k].name}`),
+    h('div', { class: 'lab' }, `${LANGS[k].flag} ${LANGS[k].name}`,
+      canSpeak && VOICE_CODE[k] && h('button', { class: 'mini-speak', 'aria-label': 'Play ' + LANGS[k].name, html: ICON.speaker, onclick: e => { e.stopPropagation(); speak(p, [k]); } })),
     h('div', { class: 'txt' + (k === 'my' ? ' my' : '') }, p[k]));
 }
 
@@ -372,16 +380,14 @@ function study() {
     m.prompt.map(k => line(k, p, true)),
     s.revealed && m.prompt.length > 0 && h('div', { class: 'divider' }),
     s.revealed && m.answer.map(k => line(k, p, LEARN.includes(k))),
-    !s.revealed && h('div', { class: 'hint' }, 'Tap to reveal'),
-    canSpeak && s.mode !== 'listen' && (s.revealed || s.mode === 'recognise') &&
-      h('button', { class: 'again-btn', html: ICON.speaker + ' Play again', onclick: e => { e.stopPropagation(); speak(p); } }));
+    !s.revealed && h('div', { class: 'hint' }, 'Tap to reveal'));
   const controls = s.revealed
     ? h('div', { class: 'rates' },
         h('button', { class: 'r-again', onclick: () => rate('again') }, 'Again', h('small', {}, 'see it soon')),
         h('button', { class: 'r-good', onclick: () => rate('good') }, 'Good', h('small', {}, 'got it')),
         h('button', { class: 'r-easy', onclick: () => rate('easy') }, 'Easy', h('small', {}, 'too easy')))
     : h('button', { class: 'primary', onclick: reveal }, 'Show answer');
-  return [head, bar, card, controls, h('div', { class: 'keys' }, 'Keys: Space to reveal · 1 Again · 2 Good · 3 Easy · P play')];
+  return [head, bar, card, controls, h('div', { class: 'keys' }, 'Keys: Space to reveal · 1 Again · 2 Good · 3 Easy · D Danish audio · F French audio')];
 }
 
 function reveal() {
@@ -408,7 +414,7 @@ function startAudio() {
 function settingsView() {
   const picker = (k, label) => h('div', { class: 'set' },
     h('label', { for: 'voice-' + k }, label),
-    h('select', { id: 'voice-' + k, class: 'pick', onchange: e => { settings.voice[k] = e.target.value; saveSettings(); speak({ da: 'Hej, jeg hedder Lingua.' }); } },
+    h('select', { id: 'voice-' + k, class: 'pick', onchange: e => { settings.voice[k] = e.target.value; saveSettings(); speak({ da: 'Hej, jeg hedder Lingua.', fr: 'Bonjour, je m\'appelle Lingua.' }, [k]); } },
       h('option', { value: '', selected: !settings.voice[k] }, 'Phone default'),
       voicesFor(k).map(v => h('option', { value: v.voiceURI, selected: settings.voice[k] === v.voiceURI }, v.name + (v.lang.length > 2 ? ' (' + v.lang + ')' : '')))));
   return [
@@ -426,11 +432,14 @@ function settingsView() {
         h('input', { type: 'range', id: 'rate', min: '0.5', max: '1.1', step: '0.05', value: String(settings.rate), oninput: e => { settings.rate = +e.target.value; saveSettings(); } }),
         h('span', { 'aria-hidden': 'true' }, '🐇')),
       canSpeak && picker('da', '🇩🇰 Danish voice'),
+      canSpeak && picker('fr', '🇫🇷 French voice'),
       h('div', { class: 'set' },
-        h('span', {}, 'Test the voice'),
-        h('button', { class: 'ghost', onclick: () => speak({ da: 'Hej, jeg hedder Lingua.' }) }, 'Play'))),
+        h('span', {}, 'Test the voices'),
+        h('span', { style: 'display:flex;gap:8px' },
+          h('button', { class: 'ghost', onclick: () => speak({ da: 'Hej, jeg hedder Lingua.', fr: 'Bonjour, je m\'appelle Lingua.' }, ['da']) }, '🇩🇰 Play'),
+          h('button', { class: 'ghost', onclick: () => speak({ da: 'Hej, jeg hedder Lingua.', fr: 'Bonjour, je m\'appelle Lingua.' }, ['fr']) }, '🇫🇷 Play')))),
     h('p', { class: 'note' }, canSpeak
-      ? 'Audio plays in Danish only. "Phone default" uses the Danish voice set on your device. On iPhone that is Settings › Accessibility › Read & Speak › Voices. After downloading a new voice, close the browser fully and reopen this page.'
+      ? 'Danish plays automatically. French plays when you tap its 🇫🇷 button. "Phone default" uses the voice set for that language on your device. On iPhone that is Settings › Accessibility › Read & Speak › Voices. After downloading a new voice, close the browser fully and reopen this page.'
       : 'This browser cannot play speech.'),
     h('div', { class: 'section-label' }, 'Progress'),
     h('div', { class: 'panel' },
@@ -451,7 +460,8 @@ document.addEventListener('keydown', e => {
   else if (s.revealed && e.key === '1') rate('again');
   else if (s.revealed && e.key === '2') rate('good');
   else if (s.revealed && e.key === '3') rate('easy');
-  else if ((e.key === 'p' || e.key === 'P') && s.queue[0]) speak(s.queue[0]);
+  else if ((e.key === 'd' || e.key === 'D' || e.key === 'p' || e.key === 'P') && s.queue[0]) speak(s.queue[0], ['da']);
+  else if ((e.key === 'f' || e.key === 'F') && s.queue[0] && (s.revealed || MODES[s.mode].prompt.includes('fr'))) speak(s.queue[0], ['fr']);
 });
 
 // The first card of a session plays once the study screen opens (tap = user gesture).
