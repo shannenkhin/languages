@@ -287,7 +287,41 @@ const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { cons
 // ---------- views ----------
 const view = { screen: 'home', lesson: null, session: null, confirmReset: false };
 const root = document.getElementById('app');
-function go(screen, extra = {}) { hush(); Object.assign(view, { screen, confirmReset: false }, extra); render(); window.scrollTo(0, 0); }
+// Every screen change is a browser history entry, so the browser's Back button
+// moves between screens inside the app instead of leaving the page.
+function go(screen, extra = {}, { fromHistory = false, replace = false } = {}) {
+  hush();
+  Object.assign(view, { screen, confirmReset: false }, extra);
+  render();
+  window.scrollTo(0, 0);
+  if (!fromHistory) {
+    const depth = screen === 'home' ? 0 : (history.state?.depth ?? 0) + (replace ? 0 : 1);
+    const state = { screen, lessonId: view.lesson?.id ?? null, depth };
+    try { replace ? history.replaceState(state, '') : history.pushState(state, ''); } catch {}
+  }
+  if (screen === 'study' && !fromHistory) startAudio();
+}
+// In-app Back / Close buttons step back through the same history.
+function back() {
+  if ((history.state?.depth ?? 0) > 0) history.back();
+  else go('home', {}, { replace: true });
+}
+window.addEventListener('popstate', e => {
+  const st = e.state;
+  if (!st || st.guard) {
+    // Back from the first screen: stay on the lesson list instead of leaving the page.
+    try { history.pushState({ screen: 'home', lessonId: null, depth: 0 }, ''); } catch {}
+    go('home', {}, { fromHistory: true });
+    return;
+  }
+  const lesson = COURSE.lessons.find(l => l.id === st.lessonId) || null;
+  if (st.screen === 'study' && !(view.session && view.session.queue.length)) {
+    // A finished or missing session can't be resumed; show its lesson instead.
+    go(lesson ? 'lesson' : 'home', { lesson }, { fromHistory: true });
+    return;
+  }
+  go(st.screen, { lesson: lesson || view.lesson }, { fromHistory: true });
+});
 
 function render() {
   root.replaceChildren(...({ home, lesson, study, settings: settingsView })[view.screen]().flat(Infinity).filter(c => c != null && c !== false));
@@ -305,7 +339,7 @@ function home() {
         h('div', { class: 'count' }, `${n} / ${ALL.length} learned`)),
       h('div', { class: 'meter' }, h('i', { style: `width:${(n / ALL.length) * 100}%` })),
       h('button', { class: 'primary', disabled: !dueList.length,
-        onclick: () => go('study', { session: { title: 'Review', mode: 'recognise', queue: shuffle(dueList), total: dueList.length, done: 0, revealed: false } }) },
+        onclick: () => go('study', { lesson: null, session: { title: 'Review', mode: 'recognise', queue: shuffle(dueList), total: dueList.length, done: 0, revealed: false } }) },
         dueList.length ? `Review ${dueList.length} due card${dueList.length > 1 ? 's' : ''}` : 'Nothing due for review yet'),
       h('div', { class: 'sync' }, syncState === 'account' ? 'Progress is saved to your Claude account, so it follows you across devices.'
         : syncState === 'error' ? 'Could not save to your account just now. Progress is kept on this device.'
@@ -341,7 +375,7 @@ function lesson() {
   const l = view.lesson, words = l.items.filter(p => !isSentence(p)), sents = l.items.filter(isSentence);
   return [
     h('header', { class: 'bar' },
-      h('button', { class: 'icon-btn', 'aria-label': 'Back to lessons', html: ICON.back, onclick: () => go('home') }),
+      h('button', { class: 'icon-btn', 'aria-label': 'Back to lessons', html: ICON.back, onclick: back }),
       h('h1', { class: 'sub' }, `${l.emoji} ${l.title}`)),
     h('div', { class: 'tip' }, h('span', { 'aria-hidden': 'true' }, '💡'), h('span', {}, l.tip)),
     h('div', { class: 'modes' }, Object.entries(MODES).map(([k, m]) =>
@@ -365,14 +399,14 @@ function line(k, p, lead) {
 function study() {
   const s = view.session, m = MODES[s.mode], p = s.queue[0];
   const head = h('header', { class: 'bar' },
-    h('button', { class: 'icon-btn', 'aria-label': 'Close', html: ICON.close, onclick: () => go(view.lesson && s.title !== 'Review' ? 'lesson' : 'home') }),
+    h('button', { class: 'icon-btn', 'aria-label': 'Close', html: ICON.close, onclick: back }),
     h('h1', { class: 'sub' }, `${s.title} · ${m.title}`));
   const bar = h('div', { class: 'progress' }, h('i', { style: `width:${(s.done / s.total) * 100}%` }));
   if (!p) {
     return [head, bar, h('div', { class: 'done' },
       h('div', { class: 'big' }, '🎉'), h('h2', {}, 'Session complete'),
       h('p', {}, 'Godt klaret! · Bien joué ! · Zuò de hǎo!'), h('p', { class: 'my' }, 'တော်လိုက်တာ!'),
-      h('button', { class: 'primary', style: 'max-width:220px', onclick: () => go(view.lesson && s.title !== 'Review' ? 'lesson' : 'home') }, 'Done'))];
+      h('button', { class: 'primary', style: 'max-width:220px', onclick: back }, 'Done'))];
   }
   const card = h('div', { class: 'card', role: 'button', tabindex: '0', 'aria-label': s.revealed ? 'Card' : 'Reveal answer', onclick: reveal },
     s.mode === 'listen' && h('button', { class: 'big-speak', 'aria-label': 'Play again', html: ICON.speaker, onclick: e => { e.stopPropagation(); speak(p); } }),
@@ -419,7 +453,7 @@ function settingsView() {
       voicesFor(k).map(v => h('option', { value: v.voiceURI, selected: settings.voice[k] === v.voiceURI }, v.name + (v.lang.length > 2 ? ' (' + v.lang + ')' : '')))));
   return [
     h('header', { class: 'bar' },
-      h('button', { class: 'icon-btn', 'aria-label': 'Back', html: ICON.back, onclick: () => go('home') }),
+      h('button', { class: 'icon-btn', 'aria-label': 'Back', html: ICON.back, onclick: back }),
       h('h1', { class: 'sub' }, 'Settings')),
     h('div', { class: 'section-label' }, 'Audio'),
     h('div', { class: 'panel' },
@@ -448,7 +482,7 @@ function settingsView() {
           ? [h('span', {}, 'Mark every card as new again?'),
              h('span', { style: 'display:flex;gap:8px' },
                h('button', { class: 'ghost', onclick: () => { view.confirmReset = false; render(); } }, 'Cancel'),
-               h('button', { class: 'danger solid', onclick: () => { cards = {}; persist(); go('home'); } }, 'Reset'))]
+               h('button', { class: 'danger solid', onclick: () => { cards = {}; persist(); back(); } }, 'Reset'))]
           : [h('span', {}, 'Start over'), h('button', { class: 'danger', onclick: () => { view.confirmReset = true; render(); } }, 'Reset all progress')])),
   ];
 }
@@ -465,8 +499,11 @@ document.addEventListener('keydown', e => {
 });
 
 // The first card of a session plays once the study screen opens (tap = user gesture).
-const _go = go;
-go = function (screen, extra) { _go(screen, extra); if (screen === 'study') startAudio(); };
+// A guard entry under the first screen catches a Back press from the lesson list.
+try {
+  history.replaceState({ guard: true }, '');
+  history.pushState({ screen: 'home', lessonId: null, depth: 0 }, '');
+} catch {}
 
 render();
 connect();
